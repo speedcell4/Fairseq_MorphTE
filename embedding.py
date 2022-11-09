@@ -1,19 +1,21 @@
+import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import numpy as np
-import math
+from torch import Tensor
 
 
 class MorphTEmbedding(nn.Module):
-    def __init__(self, num_embeddings, num_surfaces, embedding_dim, co_matrix, core_dim=None, order=3, rank=8, padding_idx=None,
-                 max_norm=None,
-                 norm_type=2., scale_grad_by_freq=False, sparse=False):
+    def __init__(self, num_embeddings: int, num_surfaces: int, embedding_dim: int,
+                 co_matrix: Tensor, core_dim: int = None, order: int = 3, rank: int = 8,
+                 padding_idx: int = None, max_norm: float = None,
+                 norm_type: float = 2., scale_grad_by_freq: bool = False, sparse: bool = False) -> None:
         super(MorphTEmbedding, self).__init__()
 
-        self.num_embeddings = num_embeddings    # number of morphemes
-        self.num_surfaces = num_surfaces        # number of words
-        self.embedding_dim = embedding_dim      # word embedding dim
+        self.num_embeddings = num_embeddings  # number of morphemes
+        self.num_surfaces = num_surfaces  # number of words
+        self.embedding_dim = embedding_dim  # word embedding dim
         self.padding_idx = padding_idx
 
         self.max_norm = max_norm
@@ -24,99 +26,88 @@ class MorphTEmbedding(nn.Module):
         self.rank = rank
         self.order = order
 
-        self.core_dim = math.ceil((embedding_dim) ** (1 / order))   # morpheme embedding dim
+        self.core_dim = math.ceil(embedding_dim ** (1 / order))  # morpheme embedding dim
         if core_dim is not None:
             self.core_dim = core_dim
 
         if self.core_dim ** order > embedding_dim:
             print("Note that the resulting word embeddings will be truncated.")
 
-        self.weight = nn.ParameterList([nn.Parameter(torch.Tensor(rank, num_embeddings, self.core_dim))])   # morpheme embedding matrices
+        self.weight = nn.ParameterList(
+            [nn.Parameter(torch.Tensor(rank, num_embeddings, self.core_dim))])  # morpheme embedding matrices
 
-        self.register_buffer('co_matrix', co_matrix)    # Morpheme Index Matrix
+        self.register_buffer('co_matrix', co_matrix)  # Morpheme Index Matrix
         self.reset_parameters()
 
         self.ln = nn.LayerNorm(embedding_dim)
 
-
-    def reset_parameters(self):
+    def reset_parameters(self) -> None:
         torch.nn.init.xavier_uniform_(self.weight[0])
         with torch.no_grad():
             self.weight[0][:, 0].fill_(0)
 
-        # nn.init.normal_(self.weight[0], mean=0, std=self.embedding_dim ** -0.5)
-        # nn.init.constant_(self.weight[0][:, 0], 0)
-
-    def get_ith_core_block(self, ith, core_inx):
+    def get_ith_core_block(self, ith: int, core_inx: Tensor) -> Tensor:
         co_inx = core_inx[:, ith].unsqueeze(0).unsqueeze(-1).expand(self.rank, -1, self.core_dim)
         return self.weight[0].gather(1, co_inx)
 
+    def forward_block(self, tensor: Tensor) -> Tensor:
+        """just generate word embeddings for a batch"""
+        bs, seq_len = tensor.size()
+        tensor = tensor.view(-1)
+        core_inx = self.co_matrix.gather(0, tensor.unsqueeze(-1).expand(-1, 3))
 
-    def forward_block(self, x):
-        "just generate word embeddings for a batch"
-
-        bs, seq_len = x.shape
-        num_surfaces = bs * seq_len
-        x = x.view(-1)
-        core_inx = self.co_matrix.gather(0, x.unsqueeze(-1).expand(-1, 3))
-
-        w = self.get_ith_core_block(0, core_inx)
+        word = self.get_ith_core_block(0, core_inx)
 
         for i in range(1, self.order):
-            w_ = self.get_ith_core_block(i, core_inx)
-            w = w[:, :, :, None] * w_[:, :, None, :]
-            w = w.view(self.rank, num_surfaces, -1)
+            word_ = self.get_ith_core_block(i, core_inx)
+            word = (word[:, :, :, None] * word_[:, :, None, :]).flatten(start_dim=-2)
 
-        w = w.sum(0)
-        w = w[:, :self.embedding_dim]
-        w = w.view(bs, seq_len, -1)
-        w = self.ln(w)
+        word = word.sum(0)
+        word = word[:, :self.embedding_dim]
+        word = word.view(bs, seq_len, -1)
+        word = self.ln(word)
 
-        return w
+        return word
 
-
-    def get_ith_core(self, ith):
-        co_inx = self.co_matrix[:, ith].unsqueeze(0).unsqueeze(-1).expand(self.rank, -1, self.core_dim)
+    def get_ith_core(self, ith: int) -> Tensor:
+        co_inx = self.co_matrix[None, :, ith, None].expand(self.rank, -1, self.core_dim)
         return self.weight[0].gather(1, co_inx)
 
+    def get_emb_matrix(self) -> Tensor:
+        """generate word embeddings for the entire vocabulary"""
 
-    def get_emb_matrix(self):
-        "generate word embeddings for the entire vocabulary"
-
-        w = self.get_ith_core(0)
+        word = self.get_ith_core(0)
 
         for i in range(1, self.order):
             w_ = self.get_ith_core(i)
-            w = w[:, :, :, None] * w_[:, :, None, :]
-            w = w.view(self.rank, self.num_surfaces, -1)
+            word = word[:, :, :, None] * w_[:, :, None, :]
+            word = word.view(self.rank, self.num_surfaces, -1)
 
-        w = w.sum(0)
-        # w = w.mean(0)
+        word = word.sum(0)
+        # word = word.mean(0)
 
-        w = w[:, :self.embedding_dim]
-        w = self.ln(w)
+        word = word[:, :self.embedding_dim]
+        word = self.ln(word)
 
-        return w
+        return word
 
-
-    def forward(self, x):
-
-        w = self.get_emb_matrix()
-
+    def forward(self, tensor: Tensor) -> Tensor:
+        word = self.get_emb_matrix()
         return F.embedding(
-            x, w, self.padding_idx, self.max_norm,
-            self.norm_type, self.scale_grad_by_freq, self.sparse)
+            tensor, word, self.padding_idx, self.max_norm,
+            self.norm_type, self.scale_grad_by_freq, self.sparse,
+        )
 
 
 class MorphLSTMEmbedding(nn.Module):
-    def __init__(self, num_embeddings, num_surfaces, embedding_dim, co_matrix, order=3, padding_idx=None,
-                 max_norm=None,
+    def __init__(self, num_embeddings, num_surfaces, embedding_dim,
+                 co_matrix, order=3, padding_idx=None, max_norm=None,
                  norm_type=2., scale_grad_by_freq=False, sparse=False):
         super(MorphLSTMEmbedding, self).__init__()
 
-        self.num_surfaces = num_surfaces        # number of words
-        self.num_embeddings = num_embeddings    # number of morphemes
-        self.embedding_dim = embedding_dim      # word embedding dim
+        self.num_surfaces = num_surfaces  # number of words
+        self.num_embeddings = num_embeddings  # number of morphemes
+        self.embedding_dim = embedding_dim  # word embedding dim
         self.padding_idx = padding_idx
 
         self.max_norm = max_norm
@@ -142,7 +133,6 @@ class MorphLSTMEmbedding(nn.Module):
         return self.weight[0].gather(0, co_inx)
 
     def get_emb_matrix(self):
-
         w = [self.get_ith_core(i) for i in range(self.order)]
 
         w = torch.stack(w, dim=0)
@@ -156,12 +146,12 @@ class MorphLSTMEmbedding(nn.Module):
         return w
 
     def forward(self, x):
-
         w = self.get_emb_matrix()
 
         return F.embedding(
             x, w, self.padding_idx, self.max_norm,
-            self.norm_type, self.scale_grad_by_freq, self.sparse)
+            self.norm_type, self.scale_grad_by_freq, self.sparse,
+        )
 
 
 class NNEmbedding(nn.Module):

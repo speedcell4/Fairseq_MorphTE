@@ -1,7 +1,6 @@
-import os
 import json
-from tqdm import tqdm
 from collections import Counter
+
 from polyglot.text import Word
 
 
@@ -48,6 +47,7 @@ def morSeg_bpeCorpus(file_path_bpe: str, lang='de', WithAt=False, long=True):
 
     return word2mor, mors_set
 
+
 src = 'de'
 tgt = 'en'
 src_train_file = 'examples/translation/iwslt14.bpe-10000.de-en/train.de'
@@ -56,6 +56,10 @@ tgt_train_file = 'examples/translation/iwslt14.bpe-10000.de-en/train.en'
 word2mor_src, mor_set_src = morSeg_bpeCorpus(src_train_file, lang=src)
 word2mor_tgt, mor_set_tgt = morSeg_bpeCorpus(tgt_train_file, lang=tgt)
 
-result = {'mor_set_src':mor_set_src, 'word2mor_src':word2mor_src, 'mor_set_tgt':mor_set_tgt, 'word2mor_tgt':word2mor_tgt}
-
-json.dump(result, open('mors/iwslt14deen_bpe10000_morSeg_results.json', 'w', encoding='utf-8'), ensure_ascii=False, indent=2)
+with open('mors/iwslt14deen_bpe10000_morSeg_results.json', 'w', encoding='utf-8') as fp:
+    json.dump({
+        'mor_set_src': mor_set_src,
+        'word2mor_src': word2mor_src,
+        'mor_set_tgt': mor_set_tgt,
+        'word2mor_tgt': word2mor_tgt,
+    }, fp=fp, ensure_ascii=False, indent=2)

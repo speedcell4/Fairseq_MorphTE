@@ -3,12 +3,14 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
+import json
 from typing import Dict, List, Optional, Tuple
 
-import random
-import numpy as np
 import torch
 import torch.nn as nn
+from torch import Tensor
+
+from embedding import MorphTEmbedding, MorphLSTMEmbedding, NNEmbedding
 from fairseq import utils
 from fairseq.dataclass.utils import gen_parser_from_dataclass
 from fairseq.distributed import fsdp_wrap
@@ -18,9 +20,6 @@ from fairseq.models.transformer import (
     TransformerDecoderBase,
     TransformerConfig,
 )
-from torch import Tensor
-from embedding import MorphTEmbedding, MorphLSTMEmbedding, NNEmbedding
-import json
 
 
 class TransformerModelBase(FairseqEncoderDecoderModel):
@@ -78,7 +77,7 @@ class TransformerModelBase(FairseqEncoderDecoderModel):
                     "--share-all-embeddings requires --encoder-embed-dim to match --decoder-embed-dim"
                 )
             if cfg.decoder.embed_path and (
-                cfg.decoder.embed_path != cfg.encoder.embed_path
+                    cfg.decoder.embed_path != cfg.encoder.embed_path
             ):
                 raise ValueError(
                     "--share-all-embeddings not compatible with --decoder-embed-path"
@@ -89,7 +88,8 @@ class TransformerModelBase(FairseqEncoderDecoderModel):
             if src_mode == 'MorphTE'.lower():
                 num_morphemes, num_words, morph_index_matrix = cls.get_morphInfo_jointed(src_dict, cfg.mor_path)
                 encoder_embed_tokens = MorphTEmbedding(num_morphemes, num_words, cfg.encoder.embed_dim,
-                                                       morph_index_matrix, rank=cfg.emb_rank, padding_idx=src_dict.pad())
+                                                       morph_index_matrix, rank=cfg.emb_rank,
+                                                       padding_idx=src_dict.pad())
 
             elif src_mode == 'MorphLSTM'.lower():
                 num_morphemes, num_words, morph_index_matrix = cls.get_morphInfo_jointed(src_dict, cfg.mor_path)
@@ -110,13 +110,15 @@ class TransformerModelBase(FairseqEncoderDecoderModel):
             tgt_mode = src_mode
 
             if src_mode == 'MorphTE'.lower():
-                 num_morphemes, num_words, morph_index_matrix = cls.get_morphInfo(src_dict, lang='src', mor_path=cfg.mor_path)
-                 encoder_embed_tokens = MorphTEmbedding(num_morphemes, num_words, cfg.encoder.embed_dim,
-                                                        morph_index_matrix, rank=cfg.emb_rank,
-                                                        padding_idx=src_dict.pad())
+                num_morphemes, num_words, morph_index_matrix = cls.get_morphInfo(src_dict, lang='src',
+                                                                                 mor_path=cfg.mor_path)
+                encoder_embed_tokens = MorphTEmbedding(num_morphemes, num_words, cfg.encoder.embed_dim,
+                                                       morph_index_matrix, rank=cfg.emb_rank,
+                                                       padding_idx=src_dict.pad())
 
             elif src_mode == 'MorphLSTM'.lower():
-                num_morphemes, num_words, morph_index_matrix = cls.get_morphInfo(src_dict, lang='src', mor_path=cfg.mor_path)
+                num_morphemes, num_words, morph_index_matrix = cls.get_morphInfo(src_dict, lang='src',
+                                                                                 mor_path=cfg.mor_path)
                 encoder_embed_tokens = MorphLSTMEmbedding(num_morphemes, num_words, cfg.encoder.embed_dim,
                                                           morph_index_matrix, padding_idx=src_dict.pad())
 
@@ -125,7 +127,6 @@ class TransformerModelBase(FairseqEncoderDecoderModel):
 
             else:
                 raise NotImplementedError
-
 
             if tgt_mode == 'MorphTE'.lower():
                 num_morphemes, num_words, morph_index_matrix = cls.get_morphInfo(tgt_dict, lang='tgt',
@@ -168,7 +169,6 @@ class TransformerModelBase(FairseqEncoderDecoderModel):
             utils.load_embedding(embed_dict, dictionary, emb)
         return emb
 
-
     @classmethod
     def get_morphInfo_jointed(cls, dictionary, mor_path=None):
 
@@ -209,14 +209,13 @@ class TransformerModelBase(FairseqEncoderDecoderModel):
         co_matrix = []
         for kv in sorted(word2id.items(), key=lambda kv: (kv[1], kv[0])):
             co_matrix.append(word2morid.get(kv[0]))
-        co_matrix = torch.LongTensor(co_matrix)      # Morpheme Index Matrix
+        co_matrix = torch.LongTensor(co_matrix)  # Morpheme Index Matrix
 
         print("********************", "jointed dict")
         print("********************", "num_morphemes", len(mor2id), "num_words", len(word2id))
         # print("********************", set(word2id.keys()) - set(word2morid.keys()))
 
         return len(mor2id), len(word2id), co_matrix
-
 
     @classmethod
     def get_morphInfo(cls, dictionary, lang='src', mor_path=None):
@@ -269,7 +268,6 @@ class TransformerModelBase(FairseqEncoderDecoderModel):
 
         return len(mor2id), len(word2id), co_matrix
 
-
     @classmethod
     def build_encoder(cls, cfg, src_dict, embed_tokens):
         return TransformerEncoderBase(cfg, src_dict, embed_tokens)
@@ -286,14 +284,14 @@ class TransformerModelBase(FairseqEncoderDecoderModel):
     # TorchScript doesn't support optional arguments with variable length (**kwargs).
     # Current workaround is to add union of all arguments in child classes.
     def forward(
-        self,
-        src_tokens,
-        src_lengths,
-        prev_output_tokens,
-        return_all_hiddens: bool = True,
-        features_only: bool = False,
-        alignment_layer: Optional[int] = None,
-        alignment_heads: Optional[int] = None,
+            self,
+            src_tokens,
+            src_lengths,
+            prev_output_tokens,
+            return_all_hiddens: bool = True,
+            features_only: bool = False,
+            alignment_layer: Optional[int] = None,
+            alignment_heads: Optional[int] = None,
     ):
         """
         Run the forward pass for an encoder-decoder model.
@@ -320,10 +318,10 @@ class TransformerModelBase(FairseqEncoderDecoderModel):
     # helper function in the Base Class.
     @torch.jit.export
     def get_normalized_probs(
-        self,
-        net_output: Tuple[Tensor, Optional[Dict[str, List[Optional[Tensor]]]]],
-        log_probs: bool,
-        sample: Optional[Dict[str, Tensor]] = None,
+            self,
+            net_output: Tuple[Tensor, Optional[Dict[str, List[Optional[Tensor]]]]],
+            log_probs: bool,
+            sample: Optional[Dict[str, Tensor]] = None,
     ):
         """Get normalized probabilities (or log probs) from a net's output."""
         return self.get_normalized_probs_scriptable(net_output, log_probs, sample)

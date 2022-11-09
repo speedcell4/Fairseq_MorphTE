@@ -46,12 +46,12 @@ def main(args):
     task = tasks.get_task(args.task)
 
     def train_path(lang):
-        return "{}{}".format(args.trainpref, ("." + lang) if lang else "")
+        return f"{args.trainpref}{('.' + lang) if lang else ''}"
 
     def file_name(prefix, lang):
         fname = prefix
         if lang is not None:
-            fname += ".{lang}".format(lang=lang)
+            fname += f".{lang}"
         return fname
 
     def dest_path(prefix, lang):
@@ -79,7 +79,7 @@ def main(args):
 
     if args.joined_dictionary:
         assert (
-            not args.srcdict or not args.tgtdict
+                not args.srcdict or not args.tgtdict
         ), "cannot use both --srcdict and --tgtdict with --joined-dictionary"
 
         if args.srcdict:
@@ -123,7 +123,7 @@ def main(args):
         return
 
     def make_binary_dataset(vocab, input_prefix, output_prefix, lang, num_workers):
-        logger.info("[{}] Dictionary: {} types".format(lang, len(vocab)))
+        logger.info(f"[{lang}] Dictionary: {len(vocab)} types")
         n_seq_tok = [0, 0]
         replaced = Counter()
 
@@ -132,18 +132,16 @@ def main(args):
             n_seq_tok[0] += worker_result["nseq"]
             n_seq_tok[1] += worker_result["ntok"]
 
-        input_file = "{}{}".format(
-            input_prefix, ("." + lang) if lang is not None else ""
-        )
+        input_file = f"{input_prefix}{('.' + lang) if lang is not None else ''}"
         offsets = find_offsets(input_file, num_workers)
         (first_chunk, *more_chunks) = zip(offsets, offsets[1:])
         pool = None
         if num_workers > 1:
             pool = Pool(processes=num_workers - 1)
             for worker_id, (start_offset, end_offset) in enumerate(
-                more_chunks, start=1
+                    more_chunks, start=1
             ):
-                prefix = "{}{}".format(output_prefix, worker_id)
+                prefix = f"{output_prefix}{worker_id}"
                 pool.apply_async(
                     binarize,
                     (
@@ -176,7 +174,7 @@ def main(args):
         if num_workers > 1:
             pool.join()
             for worker_id in range(1, num_workers):
-                prefix = "{}{}".format(output_prefix, worker_id)
+                prefix = f"{output_prefix}{worker_id}"
                 temp_file_path = dataset_dest_prefix(args, prefix, lang)
                 ds.merge_file_(temp_file_path)
                 os.remove(indexed_dataset.data_file_path(temp_file_path))
@@ -185,14 +183,8 @@ def main(args):
         ds.finalize(dataset_dest_file(args, output_prefix, lang, "idx"))
 
         logger.info(
-            "[{}] {}: {} sents, {} tokens, {:.3}% replaced by {}".format(
-                lang,
-                input_file,
-                n_seq_tok[0],
-                n_seq_tok[1],
-                100 * sum(replaced.values()) / n_seq_tok[1],
-                vocab.unk_word,
-            )
+            f"[{lang}] {input_file}: {n_seq_tok[0]} sents, {n_seq_tok[1]} tokens, "
+            f"{100 * sum(replaced.values()) / n_seq_tok[1]:.3}% replaced by {vocab.unk_word}"
         )
 
     def make_binary_alignment_dataset(input_prefix, output_prefix, num_workers):
@@ -208,9 +200,9 @@ def main(args):
         if num_workers > 1:
             pool = Pool(processes=num_workers - 1)
             for worker_id, (start_offset, end_offset) in enumerate(
-                more_chunks, start=1
+                    more_chunks, start=1
             ):
-                prefix = "{}{}".format(output_prefix, worker_id)
+                prefix = f"{output_prefix}{worker_id}"
                 pool.apply_async(
                     binarize_alignments,
                     (
@@ -241,7 +233,7 @@ def main(args):
         if num_workers > 1:
             pool.join()
             for worker_id in range(1, num_workers):
-                prefix = "{}{}".format(output_prefix, worker_id)
+                prefix = f"{output_prefix}{worker_id}"
                 temp_file_path = dataset_dest_prefix(args, prefix, None)
                 ds.merge_file_(temp_file_path)
                 os.remove(indexed_dataset.data_file_path(temp_file_path))
@@ -249,14 +241,14 @@ def main(args):
 
         ds.finalize(dataset_dest_file(args, output_prefix, None, "idx"))
 
-        logger.info("[alignments] {}: parsed {} alignments".format(input_file, nseq[0]))
+        logger.info(f"[alignments] {input_file}: parsed {nseq[0]} alignments")
 
     def make_dataset(vocab, input_prefix, output_prefix, lang, num_workers=1):
         if args.dataset_impl == "raw":
             # Copy original text file to destination folder
             output_text_file = dest_path(
-                output_prefix + ".{}-{}".format(args.source_lang, args.target_lang),
-                lang,
+                output_prefix + f".{args.source_lang}-{args.target_lang}",
+                lang, 1
             )
             shutil.copyfile(file_name(input_prefix, lang), output_text_file)
         else:
@@ -267,13 +259,13 @@ def main(args):
             make_dataset(vocab, args.trainpref, "train", lang, num_workers=args.workers)
         if args.validpref:
             for k, validpref in enumerate(args.validpref.split(",")):
-                outprefix = "valid{}".format(k) if k > 0 else "valid"
+                outprefix = f"valid{k}" if k > 0 else "valid"
                 make_dataset(
                     vocab, validpref, outprefix, lang, num_workers=args.workers
                 )
         if args.testpref:
             for k, testpref in enumerate(args.testpref.split(",")):
-                outprefix = "test{}".format(k) if k > 0 else "test"
+                outprefix = f"test{k}" if k > 0 else "test"
                 make_dataset(vocab, testpref, outprefix, lang, num_workers=args.workers)
 
     def make_all_alignments():
@@ -302,7 +294,7 @@ def main(args):
     if args.align_suffix:
         make_all_alignments()
 
-    logger.info("Wrote preprocessed data to {}".format(args.destdir))
+    logger.info(f"Wrote preprocessed data to {args.destdir}")
 
     if args.alignfile:
         assert args.trainpref, "--trainpref must be set if --alignfile is specified"
@@ -337,15 +329,15 @@ def main(args):
             align_dict[srcidx] = max(freq_map[srcidx], key=freq_map[srcidx].get)
 
         with open(
-            os.path.join(
-                args.destdir,
-                "alignment.{}-{}.txt".format(args.source_lang, args.target_lang),
-            ),
-            "w",
-            encoding="utf-8",
+                os.path.join(
+                    args.destdir,
+                    f"alignment.{args.source_lang}-{args.target_lang}.txt",
+                ),
+                "w",
+                encoding="utf-8",
         ) as f:
             for k, v in align_dict.items():
-                print("{} {}".format(src_dict[k], tgt_dict[v]), file=f)
+                print(f"{src_dict[k]} {tgt_dict[v]}", file=f)
 
 
 def binarize(args, filename, vocab, output_prefix, lang, offset, end, append_eos=True):
@@ -383,20 +375,20 @@ def binarize_alignments(args, filename, parse_alignment, output_prefix, offset, 
 
 
 def dataset_dest_prefix(args, output_prefix, lang):
-    base = "{}/{}".format(args.destdir, output_prefix)
+    base = f"{args.destdir}/{output_prefix}"
     if lang is not None:
-        lang_part = ".{}-{}.{}".format(args.source_lang, args.target_lang, lang)
+        lang_part = f'.{args.source_lang}-{args.target_lang}.{lang}'
     elif args.only_source:
         lang_part = ""
     else:
-        lang_part = ".{}-{}".format(args.source_lang, args.target_lang)
+        lang_part = f".{args.source_lang}-{args.target_lang}"
 
-    return "{}{}".format(base, lang_part)
+    return f"{base}{lang_part}"
 
 
 def dataset_dest_file(args, output_prefix, lang, extension):
     base = dataset_dest_prefix(args, output_prefix, lang)
-    return "{}.{}".format(base, extension)
+    return f"{base}.{extension}"
 
 
 def cli_main():
